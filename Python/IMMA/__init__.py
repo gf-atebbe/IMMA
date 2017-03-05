@@ -1,5 +1,5 @@
 # Python module for handling IMMA data
-#  IMMA documentation is at http://icoads.noaa.gov/e-doc/imma
+# IMMA documentation is at http://icoads.noaa.gov/e-doc/imma
 
 import re
 
@@ -17,11 +17,8 @@ class IMMA(object):
         self.data[key] = item
 
     # Read in a record from a file
-    def read(self, fh):
-        line = fh.readline()
-        if (line == ""):
-            return  # EOF
-        line = line.rstrip("\n")  # Remove trailing newline
+    def read(self, line):
+        line = line.rstrip()
 
         # Core is always present (and first)
         Attachment = 0
