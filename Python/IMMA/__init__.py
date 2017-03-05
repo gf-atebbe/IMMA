@@ -5,163 +5,200 @@ import re
 
 
 class IMMA(object):
-    def __init__(self):  # Standard instance object
+    def __init__(self):
         self.attachments = []  # List of attachments in this instance
         self.data = {}  # Dictionary to hold the parameter values
 
-    # Getter and setter for instance parameters
     def __getitem__(self, key):
         return self.data[key]
 
     def __setitem__(self, key, item):
         self.data[key] = item
 
-    # Read in a record from a file
     def read(self, line):
-        line = line.rstrip()
+        """
+        Read in a record from a file
+
+        :param line: The line to decode
+        :type line: str
+
+        :return: bool
+        """
+        line = line.rstrip('\n')
 
         # Core is always present (and first)
-        Attachment = 0
-        Length = 108
+        attachment = 0
+        length = 108
 
         # Decode each attachment
         while len(line) > 0:
 
             # Pad the string with blanks if it's too short
-            if Length is not None and Length > 0 and len(line) < Length:
-                sfmt = "%%%ds" % (Length - len(line))
+            if length is not None and length > 0 and len(line) < length:
+                sfmt = "%%%ds" % (length - len(line))
                 line += sfmt % " "
 
-            self.decode(
-                line,
-                getAttachment(Attachment),
-                getParameters(Attachment),
-                getDefinitions(Attachment)
-            )
-            self.attachments.append(int(Attachment))
-            if (Length == None or Length == 0):
+            self.decode(line, getAttachment(attachment), getParameters(attachment), getDefinitions(attachment))
+            self.attachments.append(int(attachment))
+
+            if (length is None or length == 0):
                 break
-            line = line[Length:len(line)]
+
+            line = line[length:len(line)]
             if (len(line) > 0):
-                Attachment = int(line[0:2])
-                Length = line[2:4]
-                if (re.search("\S", Length) == None):
-                    Length = None
-                if (Length != None):
-                    Length = int(Length)
-                    if (Length != 0):
-                        Length = int(Length) - 4
+                attachment = int(line[0:2])
+                length = line[2:4]
+
+                if (re.search('\S', length) is None):
+                    length = None
+
+                if length is not None:
+                    length = int(length)
+                    if (length != 0):
+                        length = int(length) - 4
                         line = line[4:len(line)]
-                if getAttachment(Attachment) == None:
-                    raise ("Bad IMMA string", "Unsupported attachment ID " + Attachment)
+
+                if getAttachment(attachment) is None:
+                    raise ("Bad IMMA string", "Unsupported attachment ID %d" % attachment)
 
         return 1
 
-    # Write out a record to a file
-    def write(self, fh):  # fh is a filehandle
-        Result = ""
-        for Attachment in self.attachments:
-            Result += self.encode(
-                Attachment,
-                getParameters(Attachment),
-                getDefinitions(Attachment)
-            )
-        Result = Result.rstrip()
-        fh.write(Result + "\n")
+    def write(self, fh):
+        """
+        Write the record out to an open file
+
+        :param fh: The filehandle
+        :type fh: file handle
+
+        :return: bool
+        """
+
+        result = ''
+        for attachment in self.attachments:
+            result += self.encode(attachment, getParameters(attachment), getDefinitions(attachment))
+
+        result = result.rstrip()
+        fh.write('%s\n' % result)
         return 1
 
-    # Extract the parameter values from the string representation
-    #  of an attachment
-    def decode(self,
-               as_string,  # String representation of the attachment
-               attachment,  # Attachment name
-               parameters,  # Attachment parameter array
-               definitions):  # Attachment definitions hash
-        if (as_string == None):
+    def decode(self, as_string, attachment, parameters, definitions):
+        """
+        Extract the parameter values from the string representation of an attachment
+
+        :param as_string: String representation of the attachment
+        :type as_string: str
+
+        :param attachment: Attachment name
+        :type attachment: str
+
+        :param parameters: Attachment parameter array
+        :type parameters: list
+
+        :param definitions: Attachment definitions hash
+        :type definitions: dict
+
+        :return: None
+        """
+
+        if as_string is None:
             raise ("Bad IMMA string", "No data to decode")
 
-        Position = 0
+        position = 0
         for i in range(len(parameters)):
-            if (definitions[parameters[i]][0] != None):
-                self[parameters[i]] = as_string[Position:Position + definitions[parameters[i]][0]]
-                Position += definitions[parameters[i]][0]
+            if definitions[parameters[i]][0] is not None:
+                self[parameters[i]] = as_string[position:position + definitions[parameters[i]][0]]
+                position += definitions[parameters[i]][0]
             else:  # Undefined length - so slurp all the data
-                self[parameters[i]] = as_string[Position:len(as_string)]
+                self[parameters[i]] = as_string[position:len(as_string)]
                 self[parameters[i]] = self[parameters[i]].rstrip("\n")
-                Position = len(as_string)
+                position = len(as_string)
 
-                # Blanks mean value is undefined
-            if re.search("\S", self[parameters[i]]) == None:
+            # Blanks mean value is undefined
+            if re.search('\S', self[parameters[i]]) is None:
                 self[parameters[i]] = None
-                continue  # Next parameter
+                continue
 
-            if (definitions[parameters[i]][6] == 2):
+            if definitions[parameters[i]][6] == 2:
                 self[parameters[i]] = decode_base36(self[parameters[i]])
 
-            if (definitions[parameters[i]][6] == 1):
-                self[parameters[i]] = int(self[parameters[i]])
+            if definitions[parameters[i]][6] == 1:
+                if self[parameters[i]].strip() == '-':
+                    self[parameters[i]] = None
+                    continue
+                else:
+                    self[parameters[i]] = int(self[parameters[i]])
 
-            if (definitions[parameters[i]][5] != None and
-                        definitions[parameters[i]][5] != 1.0):
+            if definitions[parameters[i]][5] != None and definitions[parameters[i]][5] != 1.0:
                 self[parameters[i]] = int(self[parameters[i]]) * definitions[parameters[i]][5]
 
-    # Make a string representation of an attachment
-    def encode(self,
-               attachment,  # Attachment number
-               parameters,  # Ref to attachment parameter array
-               definitions):  # Ref to attachment definitions hash
-        Result = ""
+    def encode(self, attachment, parameters, definitions):
+        """
+        Make a string representation of an attachment
+
+        :param attachment: Attachment number
+        :type attachment: int
+
+        :param parameters: Attachment parameter array
+        :type parameters: list
+
+        :param definitions: Attachment definitions hash
+        :type dict
+
+        :return: str
+        """
+
+        result = ""
         for i in range(len(parameters)):
-            if (self[parameters[i]] != None):
-                Tmp = self[parameters[i]]
+            if self[parameters[i]] is not None:
+                tmp = self[parameters[i]]
 
                 # Scale to integer units for output
-                if (definitions[parameters[i]][5] != None):
-                    Tmp /= definitions[parameters[i]][5]
-                    Tmp = int(Tmp + 0.5)  # nint
+                if definitions[parameters[i]][5] is not None:
+                    tmp /= definitions[parameters[i]][5]
+                    tmp = int(tmp + 0.5)  # nint
 
                 # Encode as base36 if required
-                if (definitions[parameters[i]][6] == 2):
-                    Tmp = encode_base36(Tmp)
+                if definitions[parameters[i]][6] == 2:
+                    tmp = encode_base36(tmp)
 
                 # Print as an string of the correct length
-                if (definitions[parameters[i]][6] == 1):  # Integer
+                if definitions[parameters[i]][6] == 1:  # Integer
 
-                    if (definitions[parameters[i]][0] != None):
+                    if definitions[parameters[i]][0] is not None:
                         Lstring = "%%%dd" % (definitions[parameters[i]][0])
-                        Tmp = Lstring % (Tmp)
+                        tmp = Lstring % (tmp)
                     else:
                         # Undefined length - don't try to constrain it
-                        Tmp = "%d" % (Tmp)
+                        tmp = "%d" % (tmp)
 
                 else:  # String
 
-                    if (definitions[parameters[i]][0] != None):
+                    if definitions[parameters[i]][0] is not None:
                         Lstring = "%%-%ds" % (definitions[parameters[i]][0])
-                        Tmp = Lstring % (Tmp)
+                        tmp = Lstring % (tmp)
                     else:
-                        Tmp = "%-s" % (Tmp)
+                        tmp = "%-s" % (tmp)
 
-                Result += Tmp
+                result += tmp
 
             else:  # Undefined data - make a blank string of the corect length
 
-                if (definitions[parameters[i]][0] != None):
+                if definitions[parameters[i]][0] is not None:
                     Lstring = "%%%ds" % (definitions[parameters[i]][0])
-                    Result += Lstring % (" ")
+                    result += Lstring % (" ")
 
                 else:  # Undefined data with unknown length - should never happen
-                    Result += " "
+                    result += " "
 
-                    # Done all the parameters, add the ID and length to the start
-                    # (except for core)
-        if (attachment != 0):
-            if (attachment != 99):
-                Result = "%2d%2d%s" % (attachment, len(Result) + 4, Result)
+        # Done all the parameters, add the ID and length to the start
+        # (except for core)
+        if attachment != 0:
+            if attachment != 99:
+                result = '%2d%2d%s' % (attachment, len(result) + 4, result)
             else:
-                Result = "%2d 0%s" % (attachment, Result)
+                result = '%2d 0%s' % (attachment, result)
 
-        return Result
+        return result
 
 
 # Functions in the IMMA namespace, but outside the class
