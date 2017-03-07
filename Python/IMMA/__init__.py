@@ -38,28 +38,28 @@ class IMMA(object):
                 sfmt = "%%%ds" % (length - len(line))
                 line += sfmt % " "
 
-            self.decode(line, getAttachment(attachment), getParameters(attachment), getDefinitions(attachment))
+            self.decode(line, get_attachment(attachment), get_parameters(attachment), get_definitions(attachment))
             self.attachments.append(int(attachment))
 
-            if (length is None or length == 0):
+            if length is None or length == 0:
                 break
 
             line = line[length:len(line)]
-            if (len(line) > 0):
+            if len(line) > 0:
                 attachment = int(line[0:2])
                 length = line[2:4]
 
-                if (re.search('\S', length) is None):
+                if re.search('\S', length) is None:
                     length = None
 
                 if length is not None:
                     length = int(length)
-                    if (length != 0):
+                    if length != 0:
                         length = int(length) - 4
                         line = line[4:len(line)]
 
-                if getAttachment(attachment) is None:
-                    raise ("Bad IMMA string", "Unsupported attachment ID %d" % attachment)
+                if get_attachment(attachment) is None:
+                    raise Exception("Bad IMMA string - Unsupported attachment ID %d" % attachment)
 
         return 1
 
@@ -75,7 +75,7 @@ class IMMA(object):
 
         result = ''
         for attachment in self.attachments:
-            result += self.encode(attachment, getParameters(attachment), getDefinitions(attachment))
+            result += self.encode(attachment, get_parameters(attachment), get_definitions(attachment))
 
         result = result.rstrip()
         fh.write('%s\n' % result)
@@ -101,7 +101,7 @@ class IMMA(object):
         """
 
         if as_string is None:
-            raise ("Bad IMMA string", "No data to decode")
+            raise Exception("Bad IMMA string - No data to decode")
 
         position = 0
         for i in range(len(parameters)):
@@ -122,13 +122,17 @@ class IMMA(object):
                 self[parameters[i]] = decode_base36(self[parameters[i]])
 
             if definitions[parameters[i]][6] == 1:
-                if self[parameters[i]].strip() == '-':
+                if self[parameters[i]].strip() == '-' or ' ' in self[parameters[i]].strip():
                     self[parameters[i]] = None
                     continue
                 else:
-                    self[parameters[i]] = int(self[parameters[i]])
+                    try:
+                        self[parameters[i]] = int(self[parameters[i]])
+                    except ValueError:
+                        self[parameters[i]] = None
+                        continue
 
-            if definitions[parameters[i]][5] != None and definitions[parameters[i]][5] != 1.0:
+            if definitions[parameters[i]][5] is not None and definitions[parameters[i]][5] != 1.0:
                 self[parameters[i]] = int(self[parameters[i]]) * definitions[parameters[i]][5]
 
     def encode(self, attachment, parameters, definitions):
@@ -210,15 +214,21 @@ def read(fh):  # fh is a filehandle
     return imma_local
 
 
-def getAttachment(i):
+def get_attachment(i):
+    if "%02d" % i not in attachment:
+        return None
     return attachment["%02d" % i]
 
 
-def getParameters(i):
+def get_parameters(i):
+    if "%02d" % i not in parameters:
+        return None
     return parameters["%02d" % i]
 
 
-def getDefinitions(i):
+def get_definitions(i):
+    if "%02d" % i not in definitions:
+        return None
     return definitions["%02d" % i]
 
 
@@ -468,7 +478,7 @@ definitions['02'] = {
 }
 
 #
-# Model Quality Control attachment
+# Model Quality Control attachment (deprecated)
 #
 
 attachment['03'] = 'mqc'
@@ -581,6 +591,49 @@ definitions['05'] = {
     'TA': (4, None, None, None, None, None, 1),
     'XNI': (1, None, None, None, None, None, 1),
     'XN': (2, None, None, None, None, None, 1)
+}
+
+#
+# Model Quality Control attachment
+#
+
+attachment['06'] = 'mqc'
+
+# List of parameters in mqc section
+# In the order they are in on disc
+parameters['06'] = ('CCCC', 'BUID', 'BMP', 'BSWU', 'SWU', 'BSWV', 'SWV', 'BSAT',
+                    'BSRH', 'SRH', 'SIX', 'BSST', 'MST', 'MSH', 'BY', 'BM', 'BD',
+                    'BH', 'BFL')
+
+# For each parameter, provide an array specifying:
+#    Its length in bytes, on disc,
+#    Its minimum value
+#    Its maximum value
+#    Its minimum value (alternative representation)
+#    Its maximum value (alternative representation)
+#    Its units scale
+#    Its encoding (1 = integer, 3= character, 2= base36)
+definitions['06'] = {
+    'CCCC': (4, 65., 90., None, None, None, 3),
+    'BUID': (6, 48., 57., 65., 90., None, 3),
+    'FBSRC': (1, 0, 0, None, None, 1., 1),
+    'BMP': (5, 870.0, 1074.6, None, None, 0.1, 1),
+    'BSWU': (4, -99.9, 99.9, None, None, 0.1, 1),
+    'SWU': (4, -99.9, 99.9, None, None, 0.1, 1),
+    'BSWV': (4, -99.9, 99.9, None, None, 0.1, 1),
+    'SWV': (4, -99.9, 99.9, None, None, 0.1, 1),
+    'BSAT': (4, -99.9, 99.9, None, None, 0.1, 1),
+    'BSRH': (3, 0., 100., None, None, 1., 1),
+    'SRH': (3, 0., 100., None, None, 1., 1),
+    'SIX': (1, 2., 3., None, None, 1., 1),
+    'BSST': (5, -99.9, 99.9, None, None, 0.01, 1),
+    'MST': (1, 0., 9., None, None, 1., 1),
+    'MSH': (4, -999., 9999., None, None, 1., 1),
+    'BY': (4, 0., 9999., None, None, 1., 1),
+    'BM': (2, 1., 12., None, None, 1., 1),
+    'BD': (2, 1., 31., None, None, 1., 1),
+    'BH': (2, 0., 23., None, None, 1., 1),
+    'BFL': (2, 0., 99., None, None, 1., 1)
 }
 
 #
